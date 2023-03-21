@@ -115,12 +115,13 @@ q = Stock_1_Object.dividends.iloc[-1] / Stock_1_Object.fast_info['last_price']
 # we are modeling 0dte options, so increase theo vol
 vol = VIX['lastPrice'] / 100 * 2
 
-Option_Chain = pd.DataFrame(columns=['call_price', 'call_implied_vol', 'strike', 'put_price','put_implied_vol'])
+increment = 10
 
+Option_Chain = pd.DataFrame(columns=['call_price', 'call_implied_vol', 'strike', 'put_price','put_implied_vol'])
 
 # calculate option chain -10/+10 % from the current price
 
-for strike in range(round_to_multiple(S*.90,5), round_to_multiple(S*1.10, 5), 5):
+for strike in np.arange(round_to_multiple(S*.85,increment), round_to_multiple(S*1.15, increment), increment):
     
     K = strike
     
@@ -135,13 +136,13 @@ for strike in range(round_to_multiple(S*.90,5), round_to_multiple(S*1.10, 5), 5)
     
     # take the back-solved vol and multiply it by 1 - sqrt(moneyness), with that new vol, re-price the option
     
-    call_implied_vol = call_implied_vol * (1 - (np.sqrt(moneyness)))
+    call_implied_vol = call_implied_vol * (1+(1 - (np.sqrt(moneyness))))
     call_price = black_scholes(S, K, r, t, vol=call_implied_vol, option_type = 'call')
     
     put_price = black_scholes(S, K, r, t, vol, option_type = 'put')
     put_implied_vol = implied_volatility(S, K, r, q, t, put_price, option_type = 'put')
     
-    put_implied_vol = put_implied_vol * (1 - (np.sqrt(moneyness)))
+    put_implied_vol = put_implied_vol * (1+(1 - (np.sqrt(moneyness))))
     put_price = black_scholes(S, K, r, t, vol=put_implied_vol, option_type = 'put')
     
     Option_Chain = pd.concat([Option_Chain, pd.DataFrame([{'call_price': call_price, 'call_implied_vol': call_implied_vol, 'strike': K,'put_price': put_price, 'put_implied_vol': put_implied_vol}])])
@@ -158,30 +159,32 @@ Period_Volatility = Daily_Volatility * np.sqrt(days_to_maturity)
 Implied_Expiration_Low = S - (S*Period_Volatility)
 Implied_Expiration_High = S + (S*Period_Volatility)
 
+price_adjustment = .50
+
 # strike assembly
 
-Short_Call = Option_Chain['call_price'][Option_Chain['strike'] == round_to_multiple(Implied_Expiration_High,5) + 5]
-Short_Call_Strike = round_to_multiple(Implied_Expiration_High,5) + 5
+Short_Call = Option_Chain['call_price'][Option_Chain['strike'] == round_to_multiple(Implied_Expiration_High,increment) + increment] * price_adjustment
+Short_Call_Strike = round_to_multiple(Implied_Expiration_High,increment) + increment
 
-Long_Call = Option_Chain['call_price'][Option_Chain['strike'] == round_to_multiple(Implied_Expiration_High,5) + 10]
-Long_Call_Strike = round_to_multiple(Implied_Expiration_High,5) + 10
+Long_Call = Option_Chain['call_price'][Option_Chain['strike'] == round_to_multiple(Implied_Expiration_High,increment) + increment*2] * price_adjustment
+Long_Call_Strike = round_to_multiple(Implied_Expiration_High,increment) + increment*2
 
-Short_Put = Option_Chain['put_price'][Option_Chain['strike'] == round_to_multiple(Implied_Expiration_Low,5) - 5]
-Short_Put_Strike = round_to_multiple(Implied_Expiration_Low,5) - 5
+Short_Put = Option_Chain['put_price'][Option_Chain['strike'] == round_to_multiple(Implied_Expiration_Low,increment) - increment] * price_adjustment
+Short_Put_Strike = round_to_multiple(Implied_Expiration_Low,increment) - increment
 
-Long_Put = Option_Chain['put_price'][Option_Chain['strike'] == round_to_multiple(Implied_Expiration_Low,5) - 10]
-Long_Put_Strike = round_to_multiple(Implied_Expiration_Low,5) - 10
+Long_Put = Option_Chain['put_price'][Option_Chain['strike'] == round_to_multiple(Implied_Expiration_Low,increment) - increment*2] * price_adjustment
+Long_Put_Strike = round_to_multiple(Implied_Expiration_Low,increment) - increment*2
 
 ## calculate theo credit and risk
 
-Theo_Call_Spread_Credit = Short_Call.iloc[0] - Long_Call.iloc[0]
+Theo_Call_Spread_Credit = (Short_Call.iloc[0] - Long_Call.iloc[0])
 Theo_Call_Spread_Risk = abs(Short_Call_Strike - Long_Call_Strike) - Theo_Call_Spread_Credit
 
 Theo_Put_Spread_Credit = Short_Put.iloc[0] - Long_Put.iloc[0]
 Theo_Put_Spread_Risk = abs(Short_Put_Strike - Long_Put_Strike) - Theo_Put_Spread_Credit
 
 Theo_Condor_Credit = Theo_Call_Spread_Credit + Theo_Put_Spread_Credit
-Theo_Condor_Risk = Theo_Put_Spread_Risk + Theo_Call_Spread_Risk
+Theo_Condor_Risk = ((abs(Short_Call_Strike - Long_Call_Strike) + abs(Short_Put_Strike - Long_Put_Strike)) / 2) - Theo_Condor_Credit
 
 Theo_Call_Spread_Risk_Reward = Theo_Call_Spread_Credit / Theo_Call_Spread_Risk
 Theo_Put_Spread_Risk_Reward = Theo_Put_Spread_Credit / Theo_Put_Spread_Risk
@@ -192,7 +195,7 @@ Theo_Condo_Risk_Reward = Theo_Condor_Credit / Theo_Condor_Risk
 print(f"\n-{Short_Call_Strike}/+{Long_Call_Strike} Call Spread for {round(Theo_Call_Spread_Risk_Reward*100,2)}%, Collateral: ${round(Theo_Call_Spread_Risk * 100, 2)}, Credit: ${round(Theo_Call_Spread_Credit*100,2)}")
 print(f"-{Short_Put_Strike}/+{Long_Put_Strike} Put Spread for {round(Theo_Put_Spread_Risk_Reward*100,2)}%, Collateral: ${round(Theo_Put_Spread_Risk * 100, 2)}, Credit: ${round(Theo_Put_Spread_Credit*100,2)}")
 print(f"-{Short_Put_Strike}/+{Long_Put_Strike} & -{Short_Call_Strike}/+{Long_Call_Strike} Iron Condor for {round(Theo_Condo_Risk_Reward*100,2)}%, Collateral: ${round(Theo_Condor_Risk * 100, 2)}, Credit: ${round(Theo_Condor_Credit*100,2)}")
-
+print(f"Implied Move: {round(Period_Volatility*100,2)}%")
 
 # for the remainder of the trading session, re-evaluate the spot price and identify probability
 
