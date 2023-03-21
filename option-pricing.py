@@ -198,15 +198,30 @@ print(f"-{Short_Put_Strike}/+{Long_Put_Strike} & -{Short_Call_Strike}/+{Long_Cal
 
 for minute in range(0, 3600):
     
-    Spot_Price = json.loads(Connect2.get_quotes("$SPX.X").content)['$SPX.X']['lastPrice']
+    Spot_Price = json.loads(Connect2.get_quotes(ticker).content)[ticker]['lastPrice']
+    VIX = json.loads(Connect2.get_quotes(volatility_ticker).content)[volatility_ticker]
     
-    OTM_Put_Probability =  1 - ( (abs(Spot_Price - Implied_Expiration_Low) / Spot_Price) / Period_Volatility)
-    OTM_Call_Probability = 1 - ( (abs(Implied_Expiration_High - Spot_Price) / Spot_Price) / Period_Volatility)
+    # what % out of the money are our legs based on most recent price?
+        
+    Short_Put_Distance = (Spot_Price - Short_Put_Strike) / S
+    Short_Call_Distance = (Short_Call_Strike - Spot_Price) / S
+    
+    # the % out of the money is the distance  the stock needs to travel by to become ITM
+    # out of how much it needs to travel by, how much is covered by our initial forecasted volatility? (divide)
+    # E.g. if the movement was 6%, and we forecasted 10%, 60% of the move has already been made
+    
+    OTM_Put_Probability = (Period_Volatility - Short_Put_Distance) / Period_Volatility
+    OTM_Call_Probability = (Period_Volatility - Short_Call_Distance) / Period_Volatility
+    
+    if OTM_Put_Probability < 0:
+        OTM_Put_Probability = 0.0
+    if OTM_Call_Probability < 0:
+        OTM_Call_Probability = 0.0
     
     print(f"\nThe put leg has a {round(OTM_Put_Probability*100,2)}% probability of expiring ITM")
     print(f"The call leg has a {round(OTM_Call_Probability*100,2)}% probability of expiring ITM")
     
-    time.sleep(1)
+    time.sleep(15)
 
 
     
